@@ -1,4 +1,4 @@
-import { verifyKey } from "discord-interactions"
+import { sign } from "tweetnacl"
 
 import { InteractionCallbackTypes, InteractionTypes, MessageFlags, ApplicationCommandTypes, ApplicationCommandOptionTypes } from "./types"
 
@@ -141,16 +141,42 @@ requestRoutes.get( "GET" ).set( "/update", async ( request ) => {
 	} )
 } )
 
+// Converts a hexadecimal-encoded string into an array of bytes
+const decodeHexadecimal = ( hexadecimal ) => {
+	return Uint8Array.from( hexadecimal.match( /.{2}/g ).map( hex => parseInt( hex, 16 ) ) )
+}
+
+// Verifies the authenticity of an interaction request signature
+const validateSignature = async ( request, publicKey ) => {
+
+	// Get the hex-encoded signature and timestamp from the request headers
+	const signatureHeader = request.headers.get( "x-signature-ed25519" )
+	const timestampHeader = request.headers.get( "x-signature-timestamp" )
+
+	// Return null if those headers are not set
+	if ( !signatureHeader || !timestampHeader ) return null;
+
+	// Convert the entire raw request body into an array of bytes
+	const rawRequestBody = new Uint8Array( await request.arrayBuffer() )
+
+	// Convert the timestamp header into an array of bytes
+	const signatureTimestamp = new TextEncoder().encode( timestampHeader )
+
+	// Concatenate the timestamp header and request body byte arrays
+	const signatureMessage = new Uint8Array( signatureTimestamp.byteLength + rawRequestBody.byteLength )
+	signatureMessage.set( signatureTimestamp, 0 )
+	signatureMessage.set( rawRequestBody, signatureTimestamp.byteLength )
+
+	// Verify the request body against the request signature using the provided public key
+	return sign.detached.verify( signatureMessage, decodeHexadecimal( signatureHeader ), decodeHexadecimal( publicKey ) )
+
+}
+
 requestRoutes.get( "POST" ).set( "/interactions", async ( request, event ) => {
 	if ( !request.headers.get( "user-agent", "" ).includes( "Discord-Interactions" ) ) return new Response( null, { status: 403 } )
 
-	const signatureHeader = request.headers.get( "x-signature-ed25519" )
-	const timestampHeader = request.headers.get( "x-signature-timestamp" )
-	if ( !signatureHeader || !timestampHeader ) return new Response( null, { status: 400 } )
-
-	const rawBody = await request.clone().arrayBuffer()
-	const isGenuine = verifyKey( rawBody, signatureHeader, timestampHeader, CLIENT_PUBLIC_KEY )
-	if ( !isGenuine ) return new Response( null, { status: 401 } )
+	const isSignatureValid = await validateSignature( await request.clone(), CLIENT_PUBLIC_KEY )
+	if ( !isSignatureValid ) return new Response( null, { status: 401 } )
 
 	const interaction = await request.json()
 

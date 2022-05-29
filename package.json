@@ -28,6 +28,6 @@
 		"hentai"
 	],
 	"dependencies": {
-		"discord-interactions": "^3.2.0"
+		"tweetnacl": "^1.0.3"
 	}
 }
