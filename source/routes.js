@@ -15,56 +15,57 @@ You should have received a copy of the GNU Affero General Public License
 along with this program. If not, see https://www.gnu.org/licenses/.
 */
 
-import { sign } from "tweetnacl"
+/* API documentation for each board:
+- https://rule34.xxx/index.php?page=help&topic=dapi#
+- https://e621.net/help/api
+- https://yande.re/help/api
+- https://hypnohub.net/index.php?page=help&topic=dapi#
+- https://furry.booru.org/index.php?page=help&topic=dapi
+- https://danbooru.donmai.us/wiki_pages/help:api
+- https://gelbooru.com/index.php?page=wiki&s=view&id=18780
+- https://xbooru.com/index.php?page=help&topic=dapi
+*/
 
+// Import required enumerations
 import { InteractionCallbackTypes, InteractionTypes, MessageFlags, ApplicationCommandTypes, ApplicationCommandOptionTypes } from "./enums"
 
+// Import required helper functions
+import { getCommandOptions, validateSignature } from "./helpers"
+
+// The full URL to the Discord API
 const BASE_URL = "https://discord.com/api/v10"
-const CLIENT_AUTHORIZATION = Buffer.from( CLIENT_ID + ":" + CLIENT_SECRET ).toString( "base64" )
-const SCRIPT_AUTHORIZATION = Buffer.from( AUTHORIZATION_USER + ":" + AUTHORIZATION_PASSWORD ).toString( "base64" )
 
-// TODO: Move this to a seperate script
-const getCommandOptions = ( interactionOptions ) => {
-	const commandOptions = new Map()
+// Create a map for registering request routes for certain methods
+export const requestRoutes = new Map( [
+	[ "GET", new Map() ],
+	[ "POST", new Map() ]
+] )
 
-	interactionOptions.forEach( option => commandOptions.set( option[ "name" ], {
-		type: option[ "type" ],
-		value: option[ "value" ]
-	} ) )
-
-	return commandOptions
-}
-
-export const requestRoutes = new Map()
-requestRoutes.set( "GET", new Map() )
-requestRoutes.set( "POST", new Map() )
-
-export const createRoute = ( method, path, executor ) => {
-	requestRoutes.get( method ).set( path, executor )
-}
-
+// Permanently redirect the user to the authorization (invite) page for this bot
 requestRoutes.get( "GET" ).set( "/authorize", async () => new Response( null, {
-	status: 307,
+	status: 308,
 	headers: {
-		"Location": BASE_URL + "/oauth2/authorize?" + new URLSearchParams( {
+		"location": BASE_URL + "/oauth2/authorize?" + new URLSearchParams( {
 			"client_id": CLIENT_ID,
 			"scope": "applications.commands"
 		} ).toString()
 	}
 } ) )
 
+// Create a route for updating the application commands
 requestRoutes.get( "GET" ).set( "/update", async ( request ) => {
-	if ( request.headers.get( "authorization", "" ) !== "Basic " + SCRIPT_AUTHORIZATION ) return new Response( null, {
+
+	// Do not continue if the user has not provided valid credentials
+	if ( request.headers.get( "authorization" ) !== "Basic " + btoa( AUTHORIZATION_USER + ":" + AUTHORIZATION_PASSWORD ) ) return new Response( null, {
 		status: 401,
-		headers: {
-			"www-authenticate": "Basic realm=\"viral32111's hentai bot\""
-		}
+		headers: { "www-authenticate": "Basic" }
 	} )
 
-	const credentialsGrant = await fetch( BASE_URL + "/oauth2/token", {
+	// Send an API request to grant client credentials for authentication in the update request
+	const clientCredentialsResponse = await fetch( BASE_URL + "/oauth2/token", {
 		method: "POST",
 		headers: {
-			"Authorization": "Basic " + CLIENT_AUTHORIZATION,
+			"Authorization": "Basic " + btoa( CLIENT_ID + ":" + CLIENT_SECRET ),
 			"Content-Type": "application/x-www-form-urlencoded"
 		},
 		body: new URLSearchParams( {
@@ -73,27 +74,19 @@ requestRoutes.get( "GET" ).set( "/update", async ( request ) => {
 		} )
 	} )
 
-	if ( !credentialsGrant.ok ) return new Response( await credentialsGrant.text(), {
+	// Respond with internal server error and the response body if anything went wrong
+	if ( !clientCredentialsResponse.ok ) return new Response( await credentialsGrant.text(), {
 		status: 500,
-		headers: { "Content-Type": "application/json" }
+		headers: { "Content-Type": "text/plain" }
 	} )
 
-	const clientCredentials = await credentialsGrant.json()
+	// Parse the response body as JSON
+	const clientCredentials = await clientCredentialsResponse.json()
 
-	// TODO: Store credentials grant token and expiry date in KV
+	// TODO: Store client credentials token and expiry date in KV
 
-	/*
-	https://rule34.xxx/index.php?page=help&topic=dapi#
-	https://e621.net/help/api
-	https://yande.re/help/api
-	https://hypnohub.net/index.php?page=help&topic=dapi#
-	https://furry.booru.org/index.php?page=help&topic=dapi
-	https://danbooru.donmai.us/wiki_pages/help:api
-	https://gelbooru.com/index.php?page=wiki&s=view&id=18780
-	https://xbooru.com/index.php?page=help&topic=dapi
-	*/
-
-	const commandUpdate = await fetch( BASE_URL + "/applications/" + CLIENT_ID + "/commands", {
+	// Send an API request to bulk update the application commands using the client credentials
+	const updateCommandsResponse = await fetch( BASE_URL + "/applications/" + CLIENT_ID + "/commands", {
 		method: "PUT",
 		headers: {
 			"Authorization": clientCredentials[ "token_type" ] + " " + clientCredentials[ "access_token" ],
@@ -102,49 +95,49 @@ requestRoutes.get( "GET" ).set( "/update", async ( request ) => {
 		body: JSON.stringify( [ {
 			"type": ApplicationCommandTypes.ChatInput,
 			"name": "hentai",
-			"description": "Search various 18+ image boards.",
+			"description": "Search and browse popular anime 18+ image boards.",
 			"options": [
 				{
 					"type": ApplicationCommandOptionTypes.SubCommand,
 					"name": "help",
-					"description": "Information about this bot, and usage for the /hentai command.",
+					"description": "Information about, and a guide on how to use this bot.",
 				},
 				{
 					"type": ApplicationCommandOptionTypes.SubCommand,
 					"name": "search",
-					"description": "Search various 18+ image boards.",
-					"nsfw": true,
+					"description": "Search and browse popular anime 18+ image boards.",
+					//"nsfw": true,
 					"dm_permission": true,
 					"options": [
 						{
 							"type": ApplicationCommandOptionTypes.String,
 							"name": "site",
-							"description": "Where do you want to search?",
+							"description": "What board would you like to search?",
 							"required": true,
 							"autocomplete": false,
 							"choices": [
 								{ "name": "Rule 34", "value": "rule34.xxx" },
-								// { "name": "e621", "value": "e621.net" },
-								// { "name": "yande.re", "value": "yande.re" },
-								// { "name": "HypnoHub", "value": "hypnohub.net" },
-								// { "name": "FurryBooru", "value": "furry.booru.org" },
-								// { "name": "Danbooru", "value": "danbooru.donmai.us" },
-								// { "name": "Gelbooru", "value": "gelbooru.com" },
-								// { "name": "Xbooru", "value": "xbooru.com" }
+								//{ "name": "e621", "value": "e621.net" },
+								//{ "name": "yande.re", "value": "yande.re" },
+								//{ "name": "HypnoHub", "value": "hypnohub.net" },
+								//{ "name": "FurryBooru", "value": "furry.booru.org" },
+								//{ "name": "Danbooru", "value": "danbooru.donmai.us" },
+								//{ "name": "Gelbooru", "value": "gelbooru.com" },
+								//{ "name": "Xbooru", "value": "xbooru.com" }
 							]
 						},
 						{
 							"type": ApplicationCommandOptionTypes.String,
 							"name": "tags",
-							"description": "What do you want to search? Multiple tags should be separated by commas.",
+							"description": "What do you want to find? Multiple tags should be separated by commas.",
 							"required": true,
 							"autocomplete": true
 						},
 						{
 							"type": ApplicationCommandOptionTypes.Boolean,
 							"name": "hidden",
-							"description": "Only show the results to yourself? Default is no (show to everyone).",
-							"required": false,
+							"description": "Would you like to only show the result to yourself? Defaults to no (i.e., show to everyone).",
+							"required": false
 						}
 					]
 				}
@@ -152,42 +145,13 @@ requestRoutes.get( "GET" ).set( "/update", async ( request ) => {
 		] )
 	} )
 
-	return new Response( await commandUpdate.text(), {
-		status: ( commandUpdate.ok ? 200 : 500 ),
+	// Respond with either success or failure depending on the status, and the response body as JSON
+	return new Response( await updateCommandsResponse.text(), {
+		status: ( updateCommandsResponse.ok ? 200 : 500 ),
 		headers: { "Content-Type": "application/json" }
 	} )
+
 } )
-
-// Converts a hexadecimal-encoded string into an array of bytes
-const decodeHexadecimal = ( hexadecimal ) => {
-	return Uint8Array.from( hexadecimal.match( /.{2}/g ).map( hex => parseInt( hex, 16 ) ) )
-}
-
-// Verifies the authenticity of an interaction request signature
-const validateSignature = async ( request, publicKey ) => {
-
-	// Get the hex-encoded signature and timestamp from the request headers
-	const signatureHeader = request.headers.get( "x-signature-ed25519" )
-	const timestampHeader = request.headers.get( "x-signature-timestamp" )
-
-	// Return null if those headers are not set
-	if ( !signatureHeader || !timestampHeader ) return null;
-
-	// Convert the entire raw request body into an array of bytes
-	const rawRequestBody = new Uint8Array( await request.arrayBuffer() )
-
-	// Convert the timestamp header into an array of bytes
-	const signatureTimestamp = new TextEncoder().encode( timestampHeader )
-
-	// Concatenate the timestamp header and request body byte arrays
-	const signatureMessage = new Uint8Array( signatureTimestamp.byteLength + rawRequestBody.byteLength )
-	signatureMessage.set( signatureTimestamp, 0 )
-	signatureMessage.set( rawRequestBody, signatureTimestamp.byteLength )
-
-	// Verify the request body against the request signature using the provided public key
-	return sign.detached.verify( signatureMessage, decodeHexadecimal( signatureHeader ), decodeHexadecimal( publicKey ) )
-
-}
 
 requestRoutes.get( "POST" ).set( "/interactions", async ( request, event ) => {
 	if ( !request.headers.get( "user-agent", "" ).includes( "Discord-Interactions" ) ) return new Response( null, { status: 403 } )

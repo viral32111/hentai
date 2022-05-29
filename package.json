@@ -1,7 +1,7 @@
 {
 	"name": "hentai",
 	"version": "0.2.0",
-	"description": "A Discord bot for searching and browsing popular 18+ image boards.",
+	"description": "A Discord bot for searching and browsing popular anime 18+ image boards.",
 	"license": "AGPL-3.0",
 	"main": "source/main.js",
 	"type": "module",
