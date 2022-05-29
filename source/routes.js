@@ -30,7 +30,7 @@ along with this program. If not, see https://www.gnu.org/licenses/.
 import { InteractionCallbackTypes, InteractionTypes, MessageFlags, ApplicationCommandTypes, ApplicationCommandOptionTypes } from "./enums"
 
 // Import required helper functions
-import { getCommandOptions, validateSignature } from "./helpers"
+import { getCommandOptions, validateSignature, fetchGelbooruPosts } from "./helpers"
 
 // The full URL to the Discord API
 const BASE_URL = "https://discord.com/api/v10"
@@ -41,7 +41,13 @@ export const requestRoutes = new Map( [
 	[ "POST", new Map() ]
 ] )
 
-// Permanently redirect the user to the authorization (invite) page for this bot
+/*requestRoutes.get( "GET" ).set( "/r34test", async () => {
+	const [ totalPostCount, pagePosts ] = await fetchGelbooruPosts( "rule34.xxx", [ "thighs", "panties" ] )
+	console.log( totalPostCount, pagePosts )
+	return new Response( JSON.stringify( pagePosts ), { status: 200, headers: { "content-type": "application/json" } } )
+} )*/
+
+// Create a route for redirecting users to the authorization (invite) page for this bot...
 requestRoutes.get( "GET" ).set( "/authorize", async () => new Response( null, {
 	status: 308,
 	headers: {
@@ -52,7 +58,7 @@ requestRoutes.get( "GET" ).set( "/authorize", async () => new Response( null, {
 	}
 } ) )
 
-// Create a route for updating the application commands
+// Create a route for updating the application commands...
 requestRoutes.get( "GET" ).set( "/update", async ( request ) => {
 
 	// Do not continue if the user has not provided valid credentials
@@ -75,7 +81,7 @@ requestRoutes.get( "GET" ).set( "/update", async ( request ) => {
 	} )
 
 	// Respond with internal server error and the response body if anything went wrong
-	if ( !clientCredentialsResponse.ok ) return new Response( await credentialsGrant.text(), {
+	if ( !clientCredentialsResponse.ok ) return new Response( await clientCredentialsResponse.text(), {
 		status: 500,
 		headers: { "Content-Type": "text/plain" }
 	} )
@@ -153,14 +159,19 @@ requestRoutes.get( "GET" ).set( "/update", async ( request ) => {
 
 } )
 
+// Create a route for Discord to send application command interactions to...
 requestRoutes.get( "POST" ).set( "/interactions", async ( request, event ) => {
+
+	// Respond with forbidden for requests that do not present themselves as Discord
 	if ( !request.headers.get( "user-agent", "" ).includes( "Discord-Interactions" ) ) return new Response( null, { status: 403 } )
 
-	const isSignatureValid = await validateSignature( await request.clone(), CLIENT_PUBLIC_KEY )
-	if ( !isSignatureValid ) return new Response( null, { status: 401 } )
+	// Respond with unauthorised if the request signature is invalid
+	if ( ! await validateSignature( await request.clone(), CLIENT_PUBLIC_KEY ) ) return new Response( null, { status: 401 } )
 
+	// Parse the request body as JSON
 	const interaction = await request.json()
 
+	// Respond with acknowledgement if this is an interaction response test
 	if ( interaction[ "type" ] === InteractionTypes.Ping ) return new Response( JSON.stringify( {
 		"type": InteractionCallbackTypes.Pong
 	} ), {
@@ -168,25 +179,42 @@ requestRoutes.get( "POST" ).set( "/interactions", async ( request, event ) => {
 		headers: { "Content-Type": "application/json" }
 	} )
 
-	if ( interaction[ "type" ] === InteractionTypes.ApplicationCommand && interaction[ "data" ][ "name" ] === "hentai" ) {
-		const subCommand = interaction[ "data" ][ "options" ][ 0 ][ "name" ]
+	// If this is an application command interaction...
+	if ( interaction[ "type" ] === InteractionTypes.ApplicationCommand ) {
 
-		if ( subCommand === "help" ) return new Response( JSON.stringify( {
+		// Return an empty response if this is not for the /hentai command
+		if ( interaction[ "data" ][ "name" ] !== "hentai" ) return new Response( JSON.stringify( {
 			"type": InteractionCallbackTypes.ChannelMessageWithSource,
 			"data": {
-				"flags": MessageFlags.Ephemeral,
-				"content": "`// TODO: Write something useful here.`",
-				"allowed_mentions": { "parse": [] }
+				"content": "That application command does not exist.",
+				"allowed_mentions": { "parse": [] },
+				"flags": MessageFlags.Ephemeral
 			}
 		} ), {
 			status: 200,
 			headers: { "Content-Type": "application/json" }
 		} )
 
-		if ( subCommand === "search" ) {
-			//const isDirectMessage = ( "guild_id" in interaction )
-			//const isChannelNSFW = interaction[ "channel_id" ]...
+		// Store the name of the sub-command
+		const commandName = interaction[ "data" ][ "options" ][ 0 ][ "name" ]
 
+		// Provide information & usage if this is the help sub-command
+		if ( commandName === "help" ) return new Response( JSON.stringify( {
+			"type": InteractionCallbackTypes.ChannelMessageWithSource,
+			"data": {
+				"content": "`// TODO: Write something useful here.`",
+				"allowed_mentions": { "parse": [] },
+				"flags": MessageFlags.Ephemeral
+			}
+		} ), {
+			status: 200,
+			headers: { "Content-Type": "application/json" }
+		} )
+
+		// If this is the search sub-command...
+		if ( commandName === "search" ) {
+
+			// Get the sub-command user-provided options
 			const commandOptions = getCommandOptions( interaction[ "data" ][ "options" ][ 0 ][ "options" ] )
 
 			if ( commandOptions.get( "site" ).value === "rule34.xxx" ) {
