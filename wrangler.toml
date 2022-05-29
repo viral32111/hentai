@@ -1,0 +1,11 @@
+name = "hentai"
+type = "webpack"
+
+route = ""
+zone_id = ""
+workers_dev = true
+
+usage_model = ""
+
+compatibility_flags = []
+compatibility_date = "2022-04-11"
