@@ -1,6 +1,23 @@
+/*
+Copyright (C) 2022 viral32111 (https://viral32111.com).
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see https://www.gnu.org/licenses/.
+*/
+
 import { sign } from "tweetnacl"
 
-import { InteractionCallbackTypes, InteractionTypes, MessageFlags, ApplicationCommandTypes, ApplicationCommandOptionTypes } from "./types"
+import { InteractionCallbackTypes, InteractionTypes, MessageFlags, ApplicationCommandTypes, ApplicationCommandOptionTypes } from "./enums"
 
 const BASE_URL = "https://discord.com/api/v10"
 const CLIENT_AUTHORIZATION = Buffer.from( CLIENT_ID + ":" + CLIENT_SECRET ).toString( "base64" )
