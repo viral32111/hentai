@@ -1,0 +1,33 @@
+{
+	"name": "hentai",
+	"version": "0.2.0",
+	"description": "A Discord bot for searching and browsing popular 18+ image boards.",
+	"license": "AGPL-3.0",
+	"main": "source/main.js",
+	"type": "module",
+	"scripts": {
+		"test": "npx wrangler dev",
+		"build": "npx wrangler build",
+		"publish": "npx wrangler publish",
+		"log": "npx wrangler tail --format pretty"
+	},
+	"author": {
+		"name": "viral32111",
+		"email": "contact@viral32111.com",
+		"url": "https://viral32111.com"
+	},
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/viral32111/hentai"
+	},
+	"keywords": [
+		"discord",
+		"search",
+		"browse",
+		"adult",
+		"hentai"
+	],
+	"dependencies": {
+		"discord-interactions": "^3.2.0"
+	}
+}
