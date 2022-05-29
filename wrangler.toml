@@ -9,3 +9,10 @@ usage_model = ""
 
 compatibility_flags = []
 compatibility_date = "2022-04-11"
+
+# [secrets]
+# CLIENT_ID
+# CLIENT_SECRET
+# CLIENT_PUBLIC_KEY
+# AUTHORIZATION_USER
+# AUTHORIZATION_PASSWORD
