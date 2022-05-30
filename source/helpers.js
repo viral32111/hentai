@@ -1,11 +1,30 @@
+/*
+Copyright (C) 2022 viral32111 (https://viral32111.com).
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see https://www.gnu.org/licenses/.
+*/
+
 // Import the signature functions from NaCl
 import { sign } from "tweetnacl"
 
-// Import parser from fast XML parser
-import { XMLParser } from "fast-xml-parser"
+// The regular expressions for XML "parsing"
+const REGEX_POSTS = new RegExp( /<posts (.*?)>/ )
+const REGEX_POST = new RegExp( /<post (.*)\/>/g )
+const REGEX_ATTRIBUTE = new RegExp( /(\w+)="(.*?)"/g )
 
-// The prefix for parsed XML element attributes
-const XML_ATTRIBUTE_PREFIX = "@"
+// The regular expression for testing numbers
+const REGEX_NUMBER = new RegExp( /^\d+$/ )
 
 // Converts a hex-encoded string into an array of bytes
 const decodeHex = ( hexData ) => Uint8Array.from( hexData.match( /.{2}/g ).map( hexChar => parseInt( hexChar, 16 ) ) )
@@ -36,8 +55,8 @@ export const validateSignature = async ( request, publicKey ) => {
 
 }
 
-// Creates a dictionary from an array of interaction options
-export const getCommandOptions = ( interactionOptions ) => interactionOptions.reduce( ( map, option ) => {
+// Creates a dictionary from an array of command options
+export const convertCommandOptions = ( options ) => options.reduce( ( map, option ) => {
 	map.set( option[ "name" ], {
 		type: option[ "type" ],
 		value: option[ "value" ]
@@ -46,14 +65,25 @@ export const getCommandOptions = ( interactionOptions ) => interactionOptions.re
 	return map
 }, new Map() )
 
+/* API documentation for each board:
+- https://rule34.xxx/index.php?page=help&topic=dapi#
+- https://e621.net/help/api
+- https://yande.re/help/api
+- https://hypnohub.net/index.php?page=help&topic=dapi#
+- https://furry.booru.org/index.php?page=help&topic=dapi
+- https://danbooru.donmai.us/wiki_pages/help:api
+- https://gelbooru.com/index.php?page=wiki&s=view&id=18780
+- https://xbooru.com/index.php?page=help&topic=dapi
+*/
+
 // Fetch posts from a Gelbooru Beta 0.2 compatible board (Rule 34)
-export const fetchGelbooruPosts = async ( site, tags ) => {
+export const fetchGelbooruPosts = async ( board, tags ) => {
 
 	// Correct the Rule 34 API as it now redirects here
-	if ( site === "rule34.xxx" ) site = "api.rule34.xxx"
+	if ( board === "rule34.xxx" ) board = "api.rule34.xxx"
 
-	// Fetch the most recent posts from the provided site, for the provided tags
-	const apiResponse = await fetch( "https://" + site + "/index.php?" + new URLSearchParams( {
+	// Fetch the most recent posts from the provided board, for the provided tags
+	const apiResponse = await fetch( "https://" + board + "/index.php?" + new URLSearchParams( {
 		"page": "dapi",
 		"s": "post",
 		"q": "index",
@@ -66,11 +96,8 @@ export const fetchGelbooruPosts = async ( site, tags ) => {
 		headers: { "Accept": "text/xml, application/json, */*" }
 	} )
 
-	// Return internal server error and the response body if the request failed
-	if ( !apiResponse.ok ) return new Response( await apiResponse.text(), {
-		status: 500,
-		headers: { "Content-Type": "text/plain" }
-	} )
+	// Throw an error if the request failed
+	if ( !apiResponse.ok ) throw new Error( await apiResponse.text() )
 
 	// Get the media type of the response
 	const contentType = apiResponse.headers.get( "content-type" ).split( ";" )[ 0 ]
@@ -82,22 +109,48 @@ export const fetchGelbooruPosts = async ( site, tags ) => {
 	// If the response type is XML...
 	} else if ( contentType.startsWith( "text/xml" ) ) {
 
-		// Parse the response body as XML and retain element attributes
-		const xml = new XMLParser( {
-			ignoreAttributes: false,
-			attributeNamePrefix: XML_ATTRIBUTE_PREFIX
-		} ).parse( await apiResponse.text() )
+		// Store the XML data
+		const document = await apiResponse.text()
 
-		// Loop through each post's attributes and remove the specified prefix from them
-		xml.posts.post.forEach( ( post ) => Object.keys( post ).forEach( ( key ) => {
-			if ( !key.startsWith( XML_ATTRIBUTE_PREFIX ) ) return
-			post[ key.substring( XML_ATTRIBUTE_PREFIX.length ) ] = post[ key ]
-			delete post[ key ]
-		} ) )
+		// Define placeholders to contain extracted XML values
+		let totalPostCount = null, pagePosts = []
 
-		// Return the total number of posts and the array of posts themselves
-		return [ xml.posts[ XML_ATTRIBUTE_PREFIX + "count" ], xml.posts.post ]
+		// Extract the total number of posts
+		for ( const attributeMatch of document.match( REGEX_POSTS )[ 1 ].matchAll( REGEX_ATTRIBUTE ) ) {
+			if ( attributeMatch[ 1 ] === "count" ) {
+				totalPostCount = parseInt( attributeMatch[ 2 ] )
+				break
+			}
+		}
+
+		// Extract and loop through each post...
+		for ( const postMatch of document.matchAll( REGEX_POST ) ) {
+
+			// Create a map for holding the post data
+			let post = new Map()
+
+			// Loop through each attribute and add it to the map
+			for ( const attributeMatch of postMatch[ 1 ].matchAll( REGEX_ATTRIBUTE ) ) {
+				const attributeValue = attributeMatch[ 2 ].trim()
+				post.set( attributeMatch[ 1 ], ( REGEX_NUMBER.test( attributeValue ) ? parseInt( attributeValue ) : attributeValue ) )
+			}
+
+			// Add the post map to the posts array
+			pagePosts.push( post )
+
+		}
+
+		// Return both the total post count and all extracted posts
+		return [ totalPostCount, pagePosts ]
 
 	}
 
+}
+
+// Escapes markdown for safely displaying in a Discord message
+export const escapeMarkdown = ( text ) => {
+	text = text.replace( /_/g, "\\_" )
+	text = text.replace( /\*/g, "\\*" )
+
+	return text
 }

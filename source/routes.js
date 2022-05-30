@@ -15,22 +15,11 @@ You should have received a copy of the GNU Affero General Public License
 along with this program. If not, see https://www.gnu.org/licenses/.
 */
 
-/* API documentation for each board:
-- https://rule34.xxx/index.php?page=help&topic=dapi#
-- https://e621.net/help/api
-- https://yande.re/help/api
-- https://hypnohub.net/index.php?page=help&topic=dapi#
-- https://furry.booru.org/index.php?page=help&topic=dapi
-- https://danbooru.donmai.us/wiki_pages/help:api
-- https://gelbooru.com/index.php?page=wiki&s=view&id=18780
-- https://xbooru.com/index.php?page=help&topic=dapi
-*/
-
 // Import required enumerations
 import { InteractionCallbackTypes, InteractionTypes, MessageFlags, ApplicationCommandTypes, ApplicationCommandOptionTypes } from "./enums"
 
 // Import required helper functions
-import { getCommandOptions, validateSignature, fetchGelbooruPosts } from "./helpers"
+import { convertCommandOptions, validateSignature, fetchGelbooruPosts, escapeMarkdown } from "./helpers"
 
 // The full URL to the Discord API
 const BASE_URL = "https://discord.com/api/v10"
@@ -40,12 +29,6 @@ export const requestRoutes = new Map( [
 	[ "GET", new Map() ],
 	[ "POST", new Map() ]
 ] )
-
-/*requestRoutes.get( "GET" ).set( "/r34test", async () => {
-	const [ totalPostCount, pagePosts ] = await fetchGelbooruPosts( "rule34.xxx", [ "thighs", "panties" ] )
-	console.log( totalPostCount, pagePosts )
-	return new Response( JSON.stringify( pagePosts ), { status: 200, headers: { "content-type": "application/json" } } )
-} )*/
 
 // Create a route for redirecting users to the authorization (invite) page for this bot...
 requestRoutes.get( "GET" ).set( "/authorize", async () => new Response( null, {
@@ -72,7 +55,7 @@ requestRoutes.get( "GET" ).set( "/update", async ( request ) => {
 		method: "POST",
 		headers: {
 			"Authorization": "Basic " + btoa( CLIENT_ID + ":" + CLIENT_SECRET ),
-			"Content-Type": "application/x-www-form-urlencoded"
+			"content-type": "application/x-www-form-urlencoded"
 		},
 		body: new URLSearchParams( {
 			"grant_type": "client_credentials",
@@ -83,7 +66,7 @@ requestRoutes.get( "GET" ).set( "/update", async ( request ) => {
 	// Respond with internal server error and the response body if anything went wrong
 	if ( !clientCredentialsResponse.ok ) return new Response( await clientCredentialsResponse.text(), {
 		status: 500,
-		headers: { "Content-Type": "text/plain" }
+		headers: { "content-type": "text/plain" }
 	} )
 
 	// Parse the response body as JSON
@@ -96,7 +79,7 @@ requestRoutes.get( "GET" ).set( "/update", async ( request ) => {
 		method: "PUT",
 		headers: {
 			"Authorization": clientCredentials[ "token_type" ] + " " + clientCredentials[ "access_token" ],
-			"Content-Type": "application/json"
+			"content-type": "application/json"
 		},
 		body: JSON.stringify( [ {
 			"type": ApplicationCommandTypes.ChatInput,
@@ -117,7 +100,7 @@ requestRoutes.get( "GET" ).set( "/update", async ( request ) => {
 					"options": [
 						{
 							"type": ApplicationCommandOptionTypes.String,
-							"name": "site",
+							"name": "board",
 							"description": "What board would you like to search?",
 							"required": true,
 							"autocomplete": false,
@@ -154,7 +137,7 @@ requestRoutes.get( "GET" ).set( "/update", async ( request ) => {
 	// Respond with either success or failure depending on the status, and the response body as JSON
 	return new Response( await updateCommandsResponse.text(), {
 		status: ( updateCommandsResponse.ok ? 200 : 500 ),
-		headers: { "Content-Type": "application/json" }
+		headers: { "content-type": "application/json" }
 	} )
 
 } )
@@ -176,7 +159,7 @@ requestRoutes.get( "POST" ).set( "/interactions", async ( request, event ) => {
 		"type": InteractionCallbackTypes.Pong
 	} ), {
 		status: 200,
-		headers: { "Content-Type": "application/json" }
+		headers: { "content-type": "application/json" }
 	} )
 
 	// If this is an application command interaction...
@@ -192,7 +175,7 @@ requestRoutes.get( "POST" ).set( "/interactions", async ( request, event ) => {
 			}
 		} ), {
 			status: 200,
-			headers: { "Content-Type": "application/json" }
+			headers: { "content-type": "application/json" }
 		} )
 
 		// Store the name of the sub-command
@@ -208,64 +191,69 @@ requestRoutes.get( "POST" ).set( "/interactions", async ( request, event ) => {
 			}
 		} ), {
 			status: 200,
-			headers: { "Content-Type": "application/json" }
+			headers: { "content-type": "application/json" }
 		} )
 
 		// If this is the search sub-command...
 		if ( commandName === "search" ) {
 
 			// Get the sub-command user-provided options
-			const commandOptions = getCommandOptions( interaction[ "data" ][ "options" ][ 0 ][ "options" ] )
+			const commandOptions = convertCommandOptions( interaction[ "data" ][ "options" ][ 0 ][ "options" ] )
 
-			if ( commandOptions.get( "site" ).value === "rule34.xxx" ) {
+			// Store the options for easy access
+			const board = commandOptions.get( "board" ).value
+			const tags = commandOptions.get( "tags" ).value.split( "," )
 
+			// If this search is on Rule 34...
+			if ( board === "rule34.xxx" ) {
+
+				// Make the worker continue running until this completes
 				event.waitUntil( new Promise( async ( resolve ) => {
-					const postsResponse = await fetch( "https://api.rule34.xxx/index.php?" + new URLSearchParams( {
-						"page": "dapi",
-						"s": "post",
-						"q": "index",
-						"tags": commandOptions.get( "tags" ).value.replace( ",", " " ),
-						"pid": 0,
-						"json": 1
-					} ).toString(), {
-						method: "GET",
-						headers: {
-							"Accept": "application/json, */*"
-						}
-					} )
 
-					if ( !postsResponse.ok ) return new Response( await postsResponse.text(), {
-						status: 500,
-						headers: { "Content-Type": "text/plain" }
-					} )
+					// Define placeholder variables to hold the fetched posts
+					let totalPostCount = null, pagePosts = null
 
-					const posts = await postsResponse.json()
+					// Fetch the posts matching the provided tags from the provided board
+					try {
+						[ totalPostCount, pagePosts ] = await fetchGelbooruPosts( board, tags )
 
-					const topPost = posts.reduce( ( previousPost, currentPost ) => currentPost[ "score" ] > previousPost[ "score" ] ? currentPost : previousPost, posts[ 0 ] )
-					console.log( topPost )
+					// Respond with internal server error if that fails
+					} catch ( error ) {
+						return new Response( error, {
+							status: 500,
+							headers: { "content-type": "text/plain" }
+						} )
+					}
 
+					// Get the highest scored post out of all posts returned
+					const topPost = pagePosts.reduce( ( previousPost, currentPost ) => currentPost.get( "score" ) > previousPost.get( "score" ) ? currentPost : previousPost, pagePosts[ 0 ] )
+					console.log( totalPostCount, Array.from( topPost.entries() ) )
+
+					//const tags = escapeMarkdown( topPost.get( "tags" ) )
+
+					// Edit the original thinking response with an embed containing the top post
 					const editMessageResponse = await fetch( BASE_URL + "/webhooks/" + CLIENT_ID + "/" + interaction[ "token" ] + "/messages/@original", {
 						method: "PATCH",
 						headers: {
-							"Content-Type": "application/json"
+							"content-type": "application/json"
 						},
 						body: JSON.stringify( {
 							"embeds": [ {
-								"title": "Score: " + topPost[ "score" ] + " (" + topPost[ "rating" ].replace( /^\w/, character => character.toUpperCase() ) + ")", //, by " + topPost[ "owner" ],
-								"description": ( topPost[ "tags" ].length > 200 ? topPost[ "tags" ].substring( 0, 200 - 3 ) + "..." : topPost[ "tags" ] ),
-								"url": "https://rule34.xxx/index.php?page=post&s=view&id=" + topPost[ "id" ],
+								"title": "Score: " + topPost.get( "score" ), // + " (" + topPost.get( "rating" ).replace( /^\w/, character => character.toUpperCase() ) + ")", //, by " + topPost[ "owner" ],
+								//"description": ( tags.length > 200 ? tags.substring( 0, 200 - 3 ) + "..." : tags ),
+								"url": "https://rule34.xxx/index.php?page=post&s=view&id=" + topPost.get( "id" ),
 								"author": {
 									"name": "Rule 34",
 									"url": "https://rule34.xxx",
 									"icon_url": "https://rule34.xxx/apple-touch-icon-precomposed.png"
 								},
 								"image": {
-									"url": topPost[ "file_url" ]
+									"url": topPost.get( "file_url" )
 								},
 								"footer": {
-									"text": topPost[ "width" ] + "x" + topPost[ "height" ] + "px"
+									"text": topPost.get( "width" ) + "x" + topPost.get( "height" ) + "px"
 								},
-								"timestamp": new Date( topPost[ "change" ] * 1000 ).toISOString(),
+								"timestamp": new Date( topPost.get( "change" ) * 1000 ).toISOString(),
 								"color": 0xAAE5A4
 							} ],
 							"components": [
@@ -274,13 +262,13 @@ requestRoutes.get( "POST" ).set( "/interactions", async ( request, event ) => {
 									"components": [
 										{
 											"type": 2,
-											"label": "<-",
+											"label": "Previous",
 											"custom_id": "previous",
 											"style": 1,
 										},
 										{
 											"type": 2,
-											"label": "->",
+											"label": "Next",
 											"custom_id": "next",
 											"style": 1,
 										},
@@ -292,7 +280,7 @@ requestRoutes.get( "POST" ).set( "/interactions", async ( request, event ) => {
 										},
 										{
 											"type": 2,
-											"label": "X",
+											"label": "Delete",
 											"custom_id": "delete",
 											"style": 4,
 										}
@@ -302,8 +290,6 @@ requestRoutes.get( "POST" ).set( "/interactions", async ( request, event ) => {
 							"allowed_mentions": { "parse": [] }
 						} )
 					} )
-
-					console.log( editMessageResponse.status, ( await editMessageResponse.json() ) )
 
 					resolve()
 				} ) )
@@ -315,7 +301,7 @@ requestRoutes.get( "POST" ).set( "/interactions", async ( request, event ) => {
 					}*/
 				} ), {
 					status: 200,
-					headers: { "Content-Type": "application/json" }
+					headers: { "content-type": "application/json" }
 				} )
 
 			} else {
@@ -323,17 +309,18 @@ requestRoutes.get( "POST" ).set( "/interactions", async ( request, event ) => {
 					"type": InteractionCallbackTypes.DeferredChannelMessageWithSource
 				} ), {
 					status: 200,
-					headers: { "Content-Type": "application/json" }
+					headers: { "content-type": "application/json" }
 				} )
 			}
+
 		}
 
 	} else if ( interaction[ "type" ] === InteractionTypes.ApplicationCommandAutocomplete ) {
-		const commandOptions = getCommandOptions( interaction[ "data" ][ "options" ][ 0 ][ "options" ] )
+		const commandOptions = convertCommandOptions( interaction[ "data" ][ "options" ][ 0 ][ "options" ] )
 
 		// Not checking what option is focused because tags is the only autocomplete-able option
 
-		if ( commandOptions.get( "site" ).value === "rule34.xxx" ) {
+		if ( commandOptions.get( "board" ).value === "rule34.xxx" ) {
 			const tagsOption = commandOptions.get( "tags" ).value
 			const currentTags = ( tagsOption === "" ? [] : tagsOption.split( "," ) )
 
@@ -348,7 +335,7 @@ requestRoutes.get( "POST" ).set( "/interactions", async ( request, event ) => {
 
 			if ( !autoCompleteResponse.ok ) return new Response( await autoCompleteResponse.text(), {
 				status: 500,
-				headers: { "Content-Type": "text/plain" }
+				headers: { "content-type": "text/plain" }
 			} )
 
 			const autoCompleteTags = await autoCompleteResponse.json()
@@ -382,7 +369,7 @@ requestRoutes.get( "POST" ).set( "/interactions", async ( request, event ) => {
 				}
 			} ), {
 				status: 200,
-				headers: { "Content-Type": "application/json" }
+				headers: { "content-type": "application/json" }
 			} )
 		}
 
@@ -394,7 +381,7 @@ requestRoutes.get( "POST" ).set( "/interactions", async ( request, event ) => {
 			}
 		} ), {
 			status: 200,
-			headers: { "Content-Type": "application/json" }
+			headers: { "content-type": "application/json" }
 		} )
 	}
 } )
