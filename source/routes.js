@@ -185,7 +185,7 @@ requestRoutes.get( "POST" ).set( "/interactions", async ( request, event ) => {
 		if ( commandName === "help" ) return new Response( JSON.stringify( {
 			"type": InteractionCallbackTypes.ChannelMessageWithSource,
 			"data": {
-				"content": "`// TODO: Write something useful here.`",
+				"content": "Use the `/hentai search <board> <tags> <hidden>` slash-command to search an image board using one or more specified tags.\nThere is an optional hidden flag, which when set to **Yes** will make the response visible to only the user that executed the command.\nFor user convinence, the image board is choosable from a list, and the tags auto-complete while typing just like on the boards themselves.\nOnce the initial response is shown, browsing of other images with the same tags is available using the buttons underneath the message.\n\nMore information is available on [the GitHub Pages website](https://viral32111.github.io/hentai/).",
 				"allowed_mentions": { "parse": [] },
 				"flags": MessageFlags.Ephemeral
 			}
@@ -256,7 +256,7 @@ requestRoutes.get( "POST" ).set( "/interactions", async ( request, event ) => {
 								"timestamp": new Date( topPost.get( "change" ) * 1000 ).toISOString(),
 								"color": 0xAAE5A4
 							} ],
-							"components": [
+							/*"components": [
 								{
 									"type": 1,
 									"components": [
@@ -286,7 +286,7 @@ requestRoutes.get( "POST" ).set( "/interactions", async ( request, event ) => {
 										}
 									]
 								}
-							],
+							],*/
 							"allowed_mentions": { "parse": [] }
 						} )
 					} )
@@ -296,9 +296,9 @@ requestRoutes.get( "POST" ).set( "/interactions", async ( request, event ) => {
 
 				return new Response( JSON.stringify( {
 					"type": InteractionCallbackTypes.DeferredChannelMessageWithSource,
-					/*"data": {
-						"flags": ( ( commandOptions.get( "hidden" ) && commandOptions.get( "hidden" ).value ) ? MessageFlags.Ephemeral : 0 ),
-					}*/
+					"data": {
+						"flags": ( ( commandOptions.has( "hidden" ) && commandOptions.get( "hidden" ).value ) ? MessageFlags.Ephemeral : 0 ),
+					}
 				} ), {
 					status: 200,
 					headers: { "content-type": "application/json" }
