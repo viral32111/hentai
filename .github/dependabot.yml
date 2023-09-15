@@ -1,5 +1,6 @@
 version: 2
 updates:
+
   # Workflows
   - package-ecosystem: github-actions
     directory: /
