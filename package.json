@@ -6,10 +6,10 @@
 	"main": "source/main.js",
 	"type": "module",
 	"scripts": {
-		"test": "npx wrangler dev",
-		"build": "npx wrangler build",
-		"publish": "npx wrangler publish",
-		"log": "npx wrangler tail --format pretty"
+		"test": "wrangler dev",
+		"build": "wrangler build",
+		"publish": "wrangler publish",
+		"log": "wrangler tail --format pretty"
 	},
 	"author": {
 		"name": "viral32111",
@@ -29,5 +29,14 @@
 	],
 	"dependencies": {
 		"tweetnacl": "^1.0.3"
+	},
+	"devDependencies": {
+		"wrangler": "^3.99.0"
+	},
+	"packageManager": "yarn@4.5.3",
+	"engines": {
+		"node": ">=23.5.0",
+		"npm": ">=11.0.0",
+		"yarn": ">=4.5.3"
 	}
 }
