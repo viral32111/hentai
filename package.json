@@ -31,7 +31,7 @@
 		"tweetnacl": "^1.0.3"
 	},
 	"devDependencies": {
-		"wrangler": "^4.58.0"
+		"wrangler": "^4.59.2"
 	},
 	"packageManager": "yarn@4.5.3",
 	"engines": {
